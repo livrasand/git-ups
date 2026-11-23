@@ -1,0 +1,109 @@
+name: Build & Release Git UPS
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*", "git-ups/*"]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-client:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: windows
+            arch: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version-file: go.mod
+
+      - name: Get commit info
+        id: info
+        run: |
+          short=$(git rev-parse --short HEAD)
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "ver=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ver=$short" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build git-ups (${{ matrix.os }}/${{ matrix.arch }})
+        id: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          EXT=""
+          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+          BIN="git-ups-${{ matrix.os }}-${{ matrix.arch }}$EXT"
+          go build \
+            -trimpath \
+            -ldflags="-s -w \
+              -X 'github.com/livrasand/git-ups/internal/cli.version=${{ steps.info.outputs.ver }}'" \
+            -o "$BIN" \
+            ./cmd
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+
+      - name: SHA-256 del binario
+        id: sha
+        run: |
+          BIN="${{ steps.build.outputs.bin }}"
+          HASH=$(sha256sum "$BIN" | awk '{print $1}')
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "### git-ups SHA-256 (${{ matrix.os }}/${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$BIN  $HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance (Sigstore)
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+        with:
+          subject-path: ${{ steps.build.outputs.bin }}
+
+      - name: Publicar SHA-256 como artefacto
+        run: |
+          BIN="${{ steps.build.outputs.bin }}"
+          echo "${{ steps.sha.outputs.hash }}  $BIN" > "$BIN.sha256"
+          echo "commit: ${{ steps.info.outputs.short }}" >> "$BIN.sha256"
+          echo "built:  ${{ steps.info.outputs.built }}" >> "$BIN.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: git-ups-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ${{ steps.build.outputs.bin }}
+            ${{ steps.build.outputs.bin }}.sha256
+          retention-days: 90
+
+      - name: Create/update release on tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
+        with:
+          files: |
+            ${{ steps.build.outputs.bin }}
+            ${{ steps.build.outputs.bin }}.sha256

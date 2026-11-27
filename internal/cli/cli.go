@@ -108,8 +108,19 @@ func cmdInstall() int {
 	return 0
 }
 
+// installedNames son los nombres de subcomando git que expone el binario:
+// `git gost ...` (git-gost) y `git ups ...` (git-ups). Ambos ejecutan el mismo binario.
+var installedNames = []string{"git-gost", "git-ups"}
+
 func selfInstall() error {
-	if _, err := exec.LookPath("git-gost"); err == nil {
+	allOnPath := true
+	for _, name := range installedNames {
+		if _, err := exec.LookPath(name); err != nil {
+			allOnPath = false
+			break
+		}
+	}
+	if allOnPath {
 		return nil
 	}
 
@@ -122,16 +133,20 @@ func selfInstall() error {
 		return fmt.Errorf("localizar el directorio home: %w", err)
 	}
 
-	binName := "git-gost"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
 	binDir := filepath.Join(home, ".local", "bin")
-	target := filepath.Join(binDir, binName)
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return fmt.Errorf("crear %s: %w", binDir, err)
+	}
 
-	if exe != target {
-		if err := os.MkdirAll(binDir, 0o755); err != nil {
-			return fmt.Errorf("crear %s: %w", binDir, err)
+	for _, name := range installedNames {
+		binName := name
+		if runtime.GOOS == "windows" {
+			binName += ".exe"
+		}
+		target := filepath.Join(binDir, binName)
+
+		if exe == target {
+			continue
 		}
 		if err := copyFile(exe, target); err != nil {
 			return fmt.Errorf("copiar binario a %s: %w", target, err)
@@ -139,7 +154,7 @@ func selfInstall() error {
 		if err := os.Chmod(target, 0o755); err != nil {
 			return fmt.Errorf("dar permisos a %s: %w", target, err)
 		}
-		fmt.Printf("git-gost instalado en %s\n", target)
+		fmt.Printf("%s instalado en %s\n", name, target)
 	}
 
 	if runtime.GOOS == "windows" {

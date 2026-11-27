@@ -1,7 +1,7 @@
 # Git Uninterruptible Power Supply
 
 `git-ups` is the Go client for **gitGost**'s resilient Git networking layer (**GREN**).  
-It wraps ordinary Git operations (`clone`, `fetch`, `pull`, `push`) in a persistent background job queue with retry, pause/resume, cancellation, and progress tracking. The binary identifies itself as `git-gost` and installs itself as a `git` subcommand, so it is invoked as `git gost ...`.
+It wraps ordinary Git operations (`clone`, `fetch`, `pull`, `push`) in a persistent background job queue with retry, pause/resume, cancellation, and progress tracking. It installs itself as a `git` subcommand, so it is invoked as `git ups ...`.
 
 > Status: Phase 0 / beta. The client is under active development; expect rough edges and breaking changes.
 
@@ -35,32 +35,63 @@ go build \
 
 ## Installing the client
 
+### Quick install (macOS and Linux)
+
+```sh
+curl -L https://git-ups.livrasand.com/install.sh | sh
+```
+
+### Quick install (Windows)
+
+```powershell
+pwsh -Command "iwr https://git-ups.livrasand.com/install.ps1 -useb | iex"
+```
+
+The scripts download the latest release, verify its SHA-256 checksum and run `git-ups install`. Source: [`scripts/install.sh`](scripts/install.sh) and [`scripts/install.ps1`](scripts/install.ps1).
+
+### With Homebrew (macOS)
+
+```sh
+brew tap livrasand/tap
+brew install git-ups
+```
+
+This installs the `git ups` command.
+
+To update later:
+
+```sh
+brew upgrade git-ups
+```
+
+### From a release binary or source
+
 After building (or downloading a release binary), run:
 
 ```sh
 ./git-ups install
 ```
 
-This creates the job database and copies the binary to `~/.local/bin/git-gost` (adding it to your shell `PATH` when possible). Afterwards you can use:
+This creates the job database and copies the binary to `~/.local/bin/git-gost` and `~/.local/bin/git-ups` (adding it to your shell `PATH` when possible). Afterwards you can use:
 
 ```sh
-git gost <command>
+git ups <command>
 ```
 
 ## Usage
 
 ```
-git gost clone <url> [directory]   Clone via the gitGost server (background by default)
-git gost fetch [args...]           Create a fetch job in the current repository
-git gost pull [args...]            Create a pull job in the current repository
-git gost push [args...]            Create a push job in the current repository
-git gost jobs [n]                  List the last n jobs (default 50)
-git gost watch <id>                Follow a job's progress
-git gost pause <id>                Pause a job
-git gost resume <id>               Resume a paused job
-git gost cancel <id>               Cancel a job
-git gost install                  Prepare the client environment
-git gost version                  Show the version
+git ups clone <url> [directory]   Clone via the gitGost server (background by default)
+git ups fetch [args...]           Create a fetch job in the current repository
+git ups pull [args...]            Create a pull job in the current repository
+git ups push [args...]            Create a push job in the current repository
+git ups jobs [n]                  List the last n jobs (default 50)
+git ups watch <id>                Follow a job's progress
+git ups pause <id>                Pause a job
+git ups resume <id>               Resume a paused job
+git ups cancel <id>               Cancel a job
+git ups install                  Prepare the client environment
+git ups version                  Show the version
 ```
 
 Any other command is passed through to `git` unchanged.
@@ -74,11 +105,11 @@ Job options:
 Example:
 
 ```sh
-git gost clone https://github.com/torvalds/linux.git
+git ups clone https://github.com/torvalds/linux.git
 # Job created.
 # ID: 42
 # Running in background...
-git gost watch 42
+git ups watch 42
 ```
 
 ## Environment variables
@@ -111,7 +142,7 @@ Both HTTPS and SCP-like SSH URLs (`git@host:owner/repo.git`) are accepted.
 
 The client's resilience machinery (queue, retry, pause/resume, progress) is local, but **`clone` is designed around a gitGost gateway**:
 
-- `git gost clone <url>` always rewrites the source URL to `GITGOST_SERVER` (GitHub/GitLab/Codeberg → gateway path).
+- `git ups clone <url>` always rewrites the source URL to `GITGOST_SERVER` (GitHub/GitLab/Codeberg → gateway path).
 - It asks the gateway to create a remote bundle job, polls it, downloads the resulting bundle over HTTP with `Range` requests, verifies its SHA-256, and materializes it locally.
 - Even the layered fallback still fetches from the gateway URL, not directly from the original forge.
 

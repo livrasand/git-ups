@@ -41,7 +41,7 @@ func startBackground(id int64) (int, error) {
 
 func signalJob(pid int, sig syscall.Signal) error {
 	if pid <= 0 {
-		return fmt.Errorf("el job no tiene proceso en background activo")
+		return fmt.Errorf("job has no active background process")
 	}
 	return syscall.Kill(-pid, sig)
 }

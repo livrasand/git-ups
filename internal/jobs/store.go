@@ -3,6 +3,7 @@ package jobs
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("crear directorio de datos: %w", err)
+			return nil, fmt.Errorf("create data directory: %w", err)
 		}
 	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
@@ -45,7 +46,7 @@ func Open(path string) (*Store, error) {
 	}
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("crear esquema de jobs: %w", err)
+		return nil, fmt.Errorf("create jobs schema: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -79,7 +80,11 @@ func (s *Store) Get(id int64) (*Job, error) {
 	row := s.db.QueryRow(
 		`SELECT id, operation, url, origin, target, cwd, args, state, progress, error, pid, created_at, updated_at
 		 FROM jobs WHERE id = ?`, id)
-	return scanJob(row)
+	j, err := scanJob(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("job %d not found", id)
+	}
+	return j, err
 }
 
 func (s *Store) List(limit int) ([]Job, error) {
@@ -102,8 +107,13 @@ func (s *Store) List(limit int) ([]Job, error) {
 	return out, rows.Err()
 }
 
+// SetState updates a job's state. Once a job is cancelled its state is final:
+// a background runner that exits after being signalled cannot overwrite it.
 func (s *Store) SetState(id int64, state string) error {
-	return s.touch(id, "state", state)
+	_, err := s.db.Exec(
+		`UPDATE jobs SET state = ?, updated_at = ? WHERE id = ? AND state != ?`,
+		state, time.Now().UTC().Format(time.RFC3339Nano), id, StateCancelled)
+	return err
 }
 
 func (s *Store) SetProgress(id int64, progress string) error {

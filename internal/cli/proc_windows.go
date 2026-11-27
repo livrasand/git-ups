@@ -42,5 +42,5 @@ func startBackground(id int64) (int, error) {
 }
 
 func signalJob(pid int, sig syscall.Signal) error {
-	return fmt.Errorf("pause/resume/cancel en ejecución no está soportado en Windows en esta fase")
+	return fmt.Errorf("pause/resume/cancel of a running job is not supported on Windows in this phase")
 }

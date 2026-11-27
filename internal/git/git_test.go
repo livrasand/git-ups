@@ -38,9 +38,11 @@ func TestReceivePack(t *testing.T) {
 	}()
 
 	os.Unsetenv("GITHUB_TOKEN")
-	_, _, _, _, err := ReceivePack(tempDir, []byte{}, "owner", "repo", "", "", "")
+	// An empty body returns early with no error. Use a flush packet followed by
+	// a stub packfile header so the body reaches the token check.
+	_, _, _, _, err := ReceivePack(tempDir, []byte("0000PACKfake"), "owner", "repo", "", "", "")
 	if err == nil {
-		t.Error("Expected error when GITHUB_TOKEN is not set")
+		t.Fatal("Expected error when GITHUB_TOKEN is not set")
 	}
 	if err.Error() != "GITHUB_TOKEN not set" {
 		t.Errorf("Expected 'GITHUB_TOKEN not set', got '%s'", err.Error())
@@ -196,7 +198,7 @@ func TestGitClone_InvalidURLRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("gitClone should reject an option-injection URL")
 	}
-	if !strings.Contains(err.Error(), "URL de repositorio inválida") {
+	if !strings.Contains(err.Error(), "invalid repository URL") {
 		t.Fatalf("expected URL validation error, got: %v", err)
 	}
 }

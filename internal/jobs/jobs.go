@@ -9,6 +9,7 @@ const (
 	StateRetrying  = "retrying"
 	StateCompleted = "completed"
 	StateFailed    = "failed"
+	StateCancelled = "cancelled"
 )
 
 type Job struct {

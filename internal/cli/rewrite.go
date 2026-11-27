@@ -3,15 +3,13 @@ package cli
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
+
+	"github.com/livrasand/git-ups/internal/config"
 )
 
-func ServerBase() string {
-	if v := os.Getenv("GITGOST_SERVER"); v != "" {
-		return strings.TrimRight(v, "/")
-	}
-	return "https://gitgost.livrasand.com"
+func ServerBase() (string, error) {
+	return config.GatewayURL()
 }
 
 var hostPrefix = map[string]string{
@@ -29,16 +27,16 @@ func RewriteURL(base, raw string) (string, error) {
 
 	prefix, ok := hostPrefix[u.Hostname()]
 	if !ok {
-		return "", fmt.Errorf("host no soportado por gitGost: %s", u.Hostname())
+		return "", fmt.Errorf("host not supported by gitGost: %s", u.Hostname())
 	}
 
 	parts := splitPath(u.Path)
 	if len(parts) != 2 {
-		return "", fmt.Errorf("URL de repositorio inválida: %s", raw)
+		return "", fmt.Errorf("invalid repository URL: %s", raw)
 	}
 	owner, repo := parts[0], strings.TrimSuffix(parts[1], ".git")
 	if owner == "" || repo == "" || !validSegment(owner) || !validSegment(repo) {
-		return "", fmt.Errorf("URL de repositorio inválida: %s", raw)
+		return "", fmt.Errorf("invalid repository URL: %s", raw)
 	}
 
 	return fmt.Sprintf("%s/v1/%s/%s/%s", base, prefix, owner, repo), nil
@@ -48,10 +46,10 @@ func parseRepoURL(raw string) (*url.URL, error) {
 	if strings.Contains(raw, "://") {
 		u, err := url.Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("URL inválida: %w", err)
+			return nil, fmt.Errorf("invalid URL: %w", err)
 		}
 		if u.Hostname() == "" {
-			return nil, fmt.Errorf("URL inválida: %s", raw)
+			return nil, fmt.Errorf("invalid URL: %s", raw)
 		}
 		return u, nil
 	}
@@ -63,7 +61,7 @@ func parseRepoURL(raw string) (*url.URL, error) {
 		path := raw[colon+1:]
 		return &url.URL{Scheme: "https", Host: host, Path: "/" + path}, nil
 	}
-	return nil, fmt.Errorf("URL inválida: %s", raw)
+	return nil, fmt.Errorf("invalid URL: %s", raw)
 }
 
 func splitPath(p string) []string {

@@ -11,8 +11,8 @@ func Run(s *Store, id int64) error {
 	if err != nil {
 		return fmt.Errorf("obtener job %d: %w", id, err)
 	}
-	if job.State == StateCompleted || job.State == StateFailed {
-		return fmt.Errorf("el job %d ya terminó (%s)", id, job.State)
+	if job.State == StateCompleted || job.State == StateFailed || job.State == StateCancelled {
+		return fmt.Errorf("job %d already finished (%s)", id, job.State)
 	}
 	if err := s.SetState(id, StateRunning); err != nil {
 		return err

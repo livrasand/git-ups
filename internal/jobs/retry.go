@@ -75,7 +75,7 @@ func execGitWithRetry(s *Store, job *Job, dir string, args ...string) error {
 		if attempt > 0 {
 			_ = s.SetState(job.ID, StateRetrying)
 			_ = s.SetProgress(job.ID, fmt.Sprintf(
-				"Reintentando en %s (intento %d/%d)...", backoff, attempt, retryMax))
+				"Retrying in %s (attempt %d/%d)...", backoff, attempt, retryMax))
 			time.Sleep(backoff)
 			backoff *= 2
 		}

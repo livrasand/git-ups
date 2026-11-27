@@ -49,7 +49,7 @@ func Run(args []string) int {
 		printUsage()
 		return 0
 	case "version", "--version", "-v":
-		fmt.Printf("git-gost %s\n", version)
+		fmt.Printf("git-ups %s\n", version)
 		return 0
 	default:
 		return passthrough(args)
@@ -65,7 +65,7 @@ func passthrough(args []string) int {
 		if ee, ok := err.(*exec.ExitError); ok {
 			return ee.ExitCode()
 		}
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	return 0
@@ -93,7 +93,7 @@ func openStore() (*jobs.Store, error) {
 func cmdInstall() int {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: instalación fallida: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: installation failed: %v\n", err)
 		return 1
 	}
 	s.Close()
@@ -102,14 +102,15 @@ func cmdInstall() int {
 		fmt.Fprintf(os.Stderr, "aviso: %v\n", err)
 	}
 
-	fmt.Println("git gost install: OK")
-	fmt.Printf("Cola de jobs: %s\n", dbPath())
-	fmt.Println("Uso: git gost clone <url>  |  git gost jobs  |  git gost watch <id>")
+	fmt.Println("git ups install: OK")
+	fmt.Printf("Job queue: %s\n", dbPath())
+	fmt.Println("Uso: git ups clone <url>  |  git ups jobs  |  git ups watch <id>")
 	return 0
 }
 
 // installedNames son los nombres de subcomando git que expone el binario:
-// `git gost ...` (git-gost) y `git ups ...` (git-ups). Ambos ejecutan el mismo binario.
+// installedNames are the command names the binary is installed under: `git ups`
+// (git-ups) and `git gost` (git-gost, kept for compatibility). Both run the same binary.
 var installedNames = []string{"git-gost", "git-ups"}
 
 func selfInstall() error {
@@ -126,16 +127,16 @@ func selfInstall() error {
 
 	exe, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("localizar el binario en ejecución: %w", err)
+		return fmt.Errorf("locate running binary: %w", err)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("localizar el directorio home: %w", err)
+		return fmt.Errorf("locate home directory: %w", err)
 	}
 
 	binDir := filepath.Join(home, ".local", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		return fmt.Errorf("crear %s: %w", binDir, err)
+		return fmt.Errorf("create %s: %w", binDir, err)
 	}
 
 	for _, name := range installedNames {
@@ -149,16 +150,16 @@ func selfInstall() error {
 			continue
 		}
 		if err := copyFile(exe, target); err != nil {
-			return fmt.Errorf("copiar binario a %s: %w", target, err)
+			return fmt.Errorf("copy binary to %s: %w", target, err)
 		}
 		if err := os.Chmod(target, 0o755); err != nil {
-			return fmt.Errorf("dar permisos a %s: %w", target, err)
+			return fmt.Errorf("set permissions on %s: %w", target, err)
 		}
-		fmt.Printf("%s instalado en %s\n", name, target)
+		fmt.Printf("%s installed at %s\n", name, target)
 	}
 
 	if runtime.GOOS == "windows" {
-		fmt.Printf("Añade %s a tu PATH para usar 'git gost ...'.\n", binDir)
+		fmt.Printf("Add %s to your PATH to use 'git ups ...'.\n", binDir)
 		return nil
 	}
 	return addToPath(binDir, home)
@@ -191,17 +192,17 @@ func addToPath(dir, home string) error {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(rc), 0o755); err != nil {
-		return fmt.Errorf("crear %s: %w", filepath.Dir(rc), err)
+		return fmt.Errorf("create %s: %w", filepath.Dir(rc), err)
 	}
 	f, err := os.OpenFile(rc, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if _, err := fmt.Fprintf(f, "\n# git-gost\n%s\n", line); err != nil {
+	if _, err := fmt.Fprintf(f, "\n# git-ups\n%s\n", line); err != nil {
 		return err
 	}
-	fmt.Printf("Añadido %s al PATH en %s (recarga tu shell o ejecuta: source %s)\n", dir, rc, rc)
+	fmt.Printf("Added %s to PATH in %s (reload your shell or run: source %s)\n", dir, rc, rc)
 	return nil
 }
 
@@ -230,7 +231,7 @@ func cmdClone(args []string) int {
 		return 1
 	}
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "uso: git gost clone <url> [directorio] [-f]")
+		fmt.Fprintln(os.Stderr, "usage: git ups clone <url> [directory] [-f]")
 		return 1
 	}
 	url, target := rest[0], ""
@@ -241,15 +242,20 @@ func cmdClone(args []string) int {
 		target = defaultCloneDir(url)
 	}
 
-	rewritten, err := RewriteURL(ServerBase(), url)
+	base, err := ServerBase()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
+		return 1
+	}
+	rewritten, err := RewriteURL(base, url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
@@ -266,7 +272,7 @@ func cmdClone(args []string) int {
 		CWD:       cwd,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: crear job: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: create job: %v\n", err)
 		return 1
 	}
 
@@ -296,7 +302,7 @@ func cmdGitJob(op string, args []string) int {
 
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
@@ -311,7 +317,7 @@ func cmdGitJob(op string, args []string) int {
 		CWD:       cwd,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: crear job: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: create job: %v\n", err)
 		return 1
 	}
 
@@ -337,9 +343,9 @@ func runForeground(s *jobs.Store, id int64) int {
 	if err := jobs.Run(s, id); err != nil {
 		job, gerr := s.Get(id)
 		if gerr == nil && job.Error != "" {
-			fmt.Fprintf(os.Stderr, "git-gost: %s\n", job.Error)
+			fmt.Fprintf(os.Stderr, "git-ups: %s\n", job.Error)
 		} else {
-			fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+			fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		}
 		return 1
 	}
@@ -352,32 +358,32 @@ func launchBackground(s *jobs.Store, id int64) int {
 	if err != nil {
 		_ = s.SetState(id, jobs.StateFailed)
 		_ = s.SetError(id, err.Error())
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	_ = s.SetPID(id, pid)
-	fmt.Printf("Job created.\n\nID: %d\nRunning in background...\n\nUse 'git gost watch %d' to follow progress.\n", id, id)
+	fmt.Printf("Job created.\n\nID: %d\nRunning in background...\n\nUse 'git ups watch %d' to follow progress.\n", id, id)
 	return 0
 }
 
 func cmdRun(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "uso interno: git gost run <id>")
+		fmt.Fprintln(os.Stderr, "internal usage: git ups run <id>")
 		return 1
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: id inválido: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "git-ups: invalid id: %s\n", args[0])
 		return 1
 	}
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
 	if err := jobs.Run(s, id); err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	return 0
@@ -386,7 +392,7 @@ func cmdRun(args []string) int {
 func cmdJobs(args []string) int {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
@@ -400,7 +406,7 @@ func cmdJobs(args []string) int {
 
 	list, err := s.List(limit)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 
@@ -421,17 +427,17 @@ func cmdJobs(args []string) int {
 
 func cmdWatch(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "uso: git gost watch <id>")
+		fmt.Fprintln(os.Stderr, "usage: git ups watch <id>")
 		return 1
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: id inválido: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "git-ups: invalid id: %s\n", args[0])
 		return 1
 	}
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
@@ -440,19 +446,22 @@ func cmdWatch(args []string) int {
 	for {
 		job, err := s.Get(id)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+			fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 			return 1
 		}
 		if job.Progress != last {
 			fmt.Printf("[%s] %s\n", strings.ToUpper(job.State), job.Progress)
 			last = job.Progress
 		}
-		if job.State == jobs.StateCompleted || job.State == jobs.StateFailed {
-			if job.State == jobs.StateFailed && job.Error != "" {
-				fmt.Printf("[FAILED] %s\n", job.Error)
-			} else {
-				fmt.Printf("[COMPLETED] Job %d terminado\n", id)
-			}
+		switch job.State {
+		case jobs.StateCompleted:
+			fmt.Printf("[COMPLETED] Job %d finished\n", id)
+			return 0
+		case jobs.StateFailed:
+			fmt.Printf("[FAILED] %s\n", job.Error)
+			return 0
+		case jobs.StateCancelled:
+			fmt.Printf("[CANCELLED] Job %d cancelled\n", id)
 			return 0
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -470,7 +479,7 @@ func cmdPause(args []string) int {
 			}
 			return 0, s.SetState(j.ID, jobs.StatePaused)
 		default:
-			return 0, fmt.Errorf("el job %d no se puede pausar (estado: %s)", j.ID, j.State)
+			return 0, fmt.Errorf("job %d cannot be paused (state: %s)", j.ID, j.State)
 		}
 	})
 }
@@ -478,7 +487,7 @@ func cmdPause(args []string) int {
 func cmdResume(args []string) int {
 	return signalCommand("resume", args, func(j *jobs.Job, s *jobs.Store) (int, error) {
 		if j.State != jobs.StatePaused {
-			return 0, fmt.Errorf("el job %d no está pausado (estado: %s)", j.ID, j.State)
+			return 0, fmt.Errorf("job %d is not paused (state: %s)", j.ID, j.State)
 		}
 		if j.PID > 0 {
 			if err := signalJob(j.PID, sigCont); err != nil {
@@ -499,42 +508,42 @@ func cmdCancel(args []string) int {
 	return signalCommand("cancel", args, func(j *jobs.Job, s *jobs.Store) (int, error) {
 		switch j.State {
 		case jobs.StateQueued, jobs.StateRetrying, jobs.StatePaused:
-			_ = s.SetState(j.ID, jobs.StateFailed)
-			return 0, s.SetError(j.ID, "cancelled")
+			_ = s.SetError(j.ID, "cancelled")
+			return 0, s.SetState(j.ID, jobs.StateCancelled)
 		case jobs.StateRunning:
 			_ = signalJob(j.PID, sigTerm)
-			_ = s.SetState(j.ID, jobs.StateFailed)
-			return 0, s.SetError(j.ID, "cancelled")
+			_ = s.SetError(j.ID, "cancelled")
+			return 0, s.SetState(j.ID, jobs.StateCancelled)
 		default:
-			return 0, fmt.Errorf("el job %d ya terminó (%s)", j.ID, j.State)
+			return 0, fmt.Errorf("job %d already finished (%s)", j.ID, j.State)
 		}
 	})
 }
 
 func signalCommand(name string, args []string, action func(*jobs.Job, *jobs.Store) (int, error)) int {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "uso: git gost %s <id>\n", name)
+		fmt.Fprintf(os.Stderr, "usage: git ups %s <id>\n", name)
 		return 1
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: id inválido: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "git-ups: invalid id: %s\n", args[0])
 		return 1
 	}
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	defer s.Close()
 
 	j, err := s.Get(id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	if _, err := action(j, s); err != nil {
-		fmt.Fprintf(os.Stderr, "git-gost: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-ups: %v\n", err)
 		return 1
 	}
 	fmt.Printf("Job %d: %s\n", id, name)
@@ -542,22 +551,22 @@ func signalCommand(name string, args []string, action func(*jobs.Job, *jobs.Stor
 }
 
 func printUsage() {
-	fmt.Print(`git-gost: una capa de red resiliente para Git (Fase 0).
+	fmt.Print(`git-ups: a resilient network layer for Git (Phase 0).
 
-Uso:
-  git gost clone <url> [directorio]   Clonar vía servidor gitGost (background por defecto)
-  git gost fetch [args...]            Crear job de fetch en el repo actual
-  git gost pull [args...]             Crear job de pull en el repo actual
-  git gost push [args...]             Crear job de push en el repo actual
-  git gost jobs [n]                   Listar los últimos n jobs (por defecto 50)
-  git gost watch <id>                 Seguir el progreso de un job
-  git gost pause <id>                 Pausar un job
-  git gost resume <id>                Reanudar un job
-  git gost cancel <id>                Cancelar un job
-  git gost install                    Preparar el entorno del cliente
-  git gost version                    Mostrar versión
+Usage:
+  git ups clone <url> [directory]    Clone via the gitGost server (background by default)
+  git ups fetch [args...]            Create a fetch job in the current repo
+  git ups pull [args...]             Create a pull job in the current repo
+  git ups push [args...]             Create a push job in the current repo
+  git ups jobs [n]                   List the last n jobs (default 50)
+  git ups watch <id>                 Follow a job's progress
+  git ups pause <id>                 Pause a job
+  git ups resume <id>                Resume a job
+  git ups cancel <id>                Cancel a job
+  git ups install                    Prepare the client environment
+  git ups version                    Show version
 
-Cualquier otro comando (status, log, branch, ...) se reenvía a Git.
+Any other command (status, log, branch, ...) is passed through to Git.
 
 Opciones de jobs:
   -f, --foreground   Ejecutar en primer plano mostrando el progreso en vivo

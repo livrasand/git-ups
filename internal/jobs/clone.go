@@ -16,7 +16,7 @@ var chunkSize = 500
 func runClone(s *Store, job *Job) error {
 	if err := runCloneBundle(s, job); err != nil {
 		if errors.Is(err, errRemoteJobsUnsupported) {
-			_ = s.SetProgress(job.ID, "El servidor no soporta jobs remotos; usando descarga por capas...")
+			_ = s.SetProgress(job.ID, "The server does not support remote jobs; using layered download...")
 			return runCloneLayered(s, job)
 		}
 		return err
@@ -27,7 +27,7 @@ func runClone(s *Store, job *Job) error {
 func runCloneLayered(s *Store, job *Job) error {
 	dir := job.Target
 	if dir == "" {
-		return fmt.Errorf("job de clone sin directorio destino")
+		return fmt.Errorf("clone job has no destination directory")
 	}
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); os.IsNotExist(err) {
@@ -47,16 +47,16 @@ func runCloneLayered(s *Store, job *Job) error {
 
 	ls, err := gitOutputWithRetry(s, job, dir, "ls-remote", "--symref", "--", job.URL, "HEAD")
 	if err != nil {
-		return fmt.Errorf("descubrir rama por defecto: %w", err)
+		return fmt.Errorf("discover default branch: %w", err)
 	}
 	branch := parseDefaultBranch(ls)
 	if branch == "" {
-		return fmt.Errorf("no se pudo determinar la rama por defecto de %s", job.URL)
+		return fmt.Errorf("could not determine the default branch of %s", job.URL)
 	}
 
 	refspec := "+refs/heads/*:refs/remotes/origin/*"
 	if repoShallow(dir) {
-		_ = s.SetProgress(job.ID, "Reanudando desde el checkpoint existente...")
+		_ = s.SetProgress(job.ID, "Resuming from existing checkpoint...")
 	} else {
 		_ = s.SetProgress(job.ID, "Descargando primer bloque...")
 		if err := execGitWithRetry(s, job, dir,
@@ -94,7 +94,7 @@ func runCloneLayered(s *Store, job *Job) error {
 
 	if err := runGit(dir, "checkout", "-b", branch, "--track", "origin/"+branch); err != nil {
 		if err := runGit(dir, "checkout", branch); err != nil {
-			return fmt.Errorf("crear rama local %s: %w", branch, err)
+			return fmt.Errorf("create local branch %s: %w", branch, err)
 		}
 	}
 	return nil
@@ -154,7 +154,7 @@ func gitOutputWithRetry(s *Store, job *Job, dir string, args ...string) (string,
 		if attempt > 0 {
 			_ = s.SetState(job.ID, StateRetrying)
 			_ = s.SetProgress(job.ID, fmt.Sprintf(
-				"Reintentando en %s (intento %d/%d)...", backoff, attempt, retryMax))
+				"Retrying in %s (attempt %d/%d)...", backoff, attempt, retryMax))
 			time.Sleep(backoff)
 			backoff *= 2
 		}

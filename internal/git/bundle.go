@@ -42,17 +42,17 @@ func CreateBundle(ctx context.Context, url, workDir string) (bundlePath, default
 	}
 
 	if err := runGit(ctx, repoDir, "fetch", "--tags", "origin"); err != nil {
-		return "", "", fmt.Errorf("traer tags de origin: %w", err)
+		return "", "", fmt.Errorf("fetch tags from origin: %w", err)
 	}
 
 	branch, err := gitOutput(ctx, repoDir, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
-		return "", "", fmt.Errorf("determinar rama por defecto: %w", err)
+		return "", "", fmt.Errorf("determine default branch: %w", err)
 	}
 
 	bundlePath = filepath.Join(workDir, "repo.bundle")
 	if err := runGit(ctx, repoDir, "bundle", "create", bundlePath, "--all"); err != nil {
-		return "", "", fmt.Errorf("crear bundle: %w", err)
+		return "", "", fmt.Errorf("create bundle: %w", err)
 	}
 	return bundlePath, strings.TrimSpace(branch), nil
 }
@@ -61,16 +61,16 @@ var repoURLPattern = regexp.MustCompile(`(?i)^https://(github\.com|gitlab\.com|c
 
 func safeCloneURL(raw string) (string, error) {
 	if !repoURLPattern.MatchString(raw) {
-		return "", fmt.Errorf("URL de repositorio inválida: %q", raw)
+		return "", fmt.Errorf("invalid repository URL: %q", raw)
 	}
 	m := repoURLPattern.FindStringSubmatch(raw)
 	if m == nil {
-		return "", fmt.Errorf("URL de repositorio inválida: %q", raw)
+		return "", fmt.Errorf("invalid repository URL: %q", raw)
 	}
 	host := strings.ToLower(m[1])
 	owner, repo := m[2], m[3]
 	if strings.Contains(owner, "..") || strings.Contains(repo, "..") {
-		return "", fmt.Errorf("URL de repositorio inválida: %q", raw)
+		return "", fmt.Errorf("invalid repository URL: %q", raw)
 	}
 	return fmt.Sprintf("https://%s/%s/%s", host, owner, repo), nil
 }

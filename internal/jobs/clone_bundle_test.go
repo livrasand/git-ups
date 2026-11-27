@@ -59,7 +59,7 @@ func fakeBundleServer(t *testing.T, bundlePath string) (*httptest.Server, func()
 				spec := strings.TrimSuffix(strings.TrimPrefix(rng, "bytes="), "-")
 				n, err := strconv.ParseInt(spec, 10, 64)
 				if err != nil || n < 0 || n >= int64(len(data)) {
-					t.Errorf("Range inválido en el fake server: %q", rng)
+					t.Errorf("invalid Range in the fake server: %q", rng)
 					http.Error(w, "invalid range", http.StatusRequestedRangeNotSatisfiable)
 					return
 				}

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/livrasand/git-ups/internal/config"
 )
 
 var errRemoteJobsUnsupported = errors.New("remote jobs unsupported")
@@ -52,16 +54,13 @@ type remoteJobBundleInfo struct {
 	DefaultBranch string `json:"defaultBranch"`
 }
 
-func serverBase() string {
-	if v := os.Getenv("GITGOST_SERVER"); v != "" {
-		return strings.TrimRight(v, "/")
-	}
-	return "https://gitgost.livrasand.com"
+func serverBase() (string, error) {
+	return config.GatewayURL()
 }
 
 func runCloneBundle(s *Store, job *Job) error {
 	if job.Target == "" {
-		return fmt.Errorf("job de clone sin directorio destino")
+		return fmt.Errorf("clone job has no destination directory")
 	}
 
 	originalURL, err := originalRepoURL(job.URL)
@@ -69,13 +68,13 @@ func runCloneBundle(s *Store, job *Job) error {
 		return errRemoteJobsUnsupported
 	}
 
-	_ = s.SetProgress(job.ID, "Creando job de descarga en el servidor...")
+	_ = s.SetProgress(job.ID, "Creating download job on the server...")
 	id, err := createRemoteJob(originalURL)
 	if err != nil {
 		if errors.Is(err, errRemoteJobsUnsupported) {
 			return err
 		}
-		return fmt.Errorf("crear job remoto: %w", err)
+		return fmt.Errorf("create remote job: %w", err)
 	}
 
 	result, err := waitRemoteJob(s, job, id)
@@ -83,19 +82,19 @@ func runCloneBundle(s *Store, job *Job) error {
 		return err
 	}
 	if result == nil || result.DownloadURL == "" {
-		return fmt.Errorf("el job remoto %s no devolvió una URL de descarga", id)
+		return fmt.Errorf("remote job %s returned no download URL", id)
 	}
 
 	cacheFile := bundleCachePath(job.ID)
 	if err := downloadBundle(s, job, result.DownloadURL, cacheFile, result.Size, result.Sha256); err != nil {
-		return fmt.Errorf("descargar bundle: %w", err)
+		return fmt.Errorf("download bundle: %w", err)
 	}
 
 	if err := materializeClone(cacheFile, job.Target, originForJob(job, originalURL), result.DefaultBranch); err != nil {
 		return err
 	}
 	if err := os.Remove(cacheFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("eliminar bundle del cache: %w", err)
+		return fmt.Errorf("remove bundle from cache: %w", err)
 	}
 	_ = s.SetProgress(job.ID, "Clone completado")
 	return nil
@@ -111,22 +110,26 @@ func originForJob(job *Job, fallback string) string {
 func originalRepoURL(rewritten string) (string, error) {
 	u, err := url.Parse(rewritten)
 	if err != nil {
-		return "", fmt.Errorf("URL reescrita inválida: %w", err)
+		return "", fmt.Errorf("invalid rewritten URL: %w", err)
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) != 4 || parts[0] != "v1" {
-		return "", fmt.Errorf("URL reescrita no reconocida: %s", rewritten)
+		return "", fmt.Errorf("unrecognized rewritten URL: %s", rewritten)
 	}
 	host, ok := prefixHost[parts[1]]
 	if !ok {
-		return "", fmt.Errorf("host no soportado: %s", parts[1])
+		return "", fmt.Errorf("host not supported: %s", parts[1])
 	}
 	return fmt.Sprintf("https://%s/%s/%s.git", host, parts[2], parts[3]), nil
 }
 
 func createRemoteJob(repoURL string) (string, error) {
 	body, _ := json.Marshal(map[string]string{"url": repoURL})
-	req, err := http.NewRequest(http.MethodPost, serverBase()+"/v2/jobs", bytes.NewReader(body))
+	base, err := serverBase()
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest(http.MethodPost, base+"/v2/jobs", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -152,7 +155,7 @@ func createRemoteJob(repoURL string) (string, error) {
 		return "", fmt.Errorf("decodificar respuesta: %w", err)
 	}
 	if out.ID == "" {
-		return "", fmt.Errorf("el servidor no devolvió un id de job")
+		return "", fmt.Errorf("server returned no job id")
 	}
 	return out.ID, nil
 }
@@ -165,10 +168,10 @@ func waitRemoteJob(s *Store, job *Job, id string) (*remoteJobBundleInfo, error) 
 		if err != nil {
 			consecutiveErrors++
 			if consecutiveErrors >= maxPollErrors {
-				return nil, fmt.Errorf("el servidor no responde al consultar el job %s: %w", id, err)
+				return nil, fmt.Errorf("server not responding while polling job %s: %w", id, err)
 			}
 			_ = s.SetProgress(job.ID, fmt.Sprintf(
-				"Servidor no responde (intento %d/%d), reintentando...", consecutiveErrors, maxPollErrors))
+				"Server not responding (attempt %d/%d), retrying...", consecutiveErrors, maxPollErrors))
 			time.Sleep(remotePollInterval)
 			continue
 		}
@@ -177,21 +180,21 @@ func waitRemoteJob(s *Store, job *Job, id string) (*remoteJobBundleInfo, error) 
 		switch st.Status {
 		case "ready":
 			if st.Result == nil {
-				return nil, fmt.Errorf("el job remoto %s está listo pero sin resultado", id)
+				return nil, fmt.Errorf("remote job %s is ready but has no result", id)
 			}
 			return st.Result, nil
 		case "failed":
-			msg := fmt.Sprintf("el servidor no pudo crear el bundle (%s)", id)
+			msg := fmt.Sprintf("server failed to create the bundle (%s)", id)
 			if st.Error != "" {
 				msg += ": " + st.Error
 			}
 			return nil, errors.New(msg)
 		case "cancelled":
-			return nil, fmt.Errorf("el job remoto %s fue cancelado", id)
+			return nil, fmt.Errorf("remote job %s was cancelled", id)
 		default:
 			if time.Now().After(deadline) {
 				return nil, fmt.Errorf(
-					"timeout esperando el bundle del job %s (más de %s)", id, remotePollTimeout)
+					"timed out waiting for the bundle of job %s (over %s)", id, remotePollTimeout)
 			}
 			msg := fmt.Sprintf("Servidor: %s", st.Status)
 			if st.Progress != "" {
@@ -204,7 +207,11 @@ func waitRemoteJob(s *Store, job *Job, id string) (*remoteJobBundleInfo, error) 
 }
 
 func getRemoteJob(id string) (*remoteJobState, error) {
-	req, err := http.NewRequest(http.MethodGet, serverBase()+"/v2/jobs/"+id, nil)
+	base, err := serverBase()
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/v2/jobs/"+id, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +239,7 @@ func downloadBundle(s *Store, job *Job, downloadURL, dest string, size int64, sh
 			return err
 		}
 		if ok {
-			_ = s.SetProgress(job.ID, "Bundle ya descargado en cache")
+			_ = s.SetProgress(job.ID, "Bundle already downloaded to cache")
 			return nil
 		}
 		_ = os.Remove(dest)
@@ -248,7 +255,7 @@ func downloadBundle(s *Store, job *Job, downloadURL, dest string, size int64, sh
 	if ok {
 		return nil
 	}
-	_ = s.SetProgress(job.ID, "Bundle con hash incorrecto; descargando de nuevo...")
+	_ = s.SetProgress(job.ID, "Bundle hash mismatch; downloading again...")
 	_ = os.Remove(dest)
 	if err := downloadWithRetry(s, job, downloadURL, dest, size); err != nil {
 		return err
@@ -256,7 +263,7 @@ func downloadBundle(s *Store, job *Job, downloadURL, dest string, size int64, sh
 	if ok, err := hashMatches(dest, sha); err != nil {
 		return err
 	} else if !ok {
-		return fmt.Errorf("el bundle descargado no coincide con el sha256 esperado")
+		return fmt.Errorf("downloaded bundle does not match the expected sha256")
 	}
 	return nil
 }
@@ -268,7 +275,7 @@ func downloadWithRetry(s *Store, job *Job, rawURL, dest string, size int64) erro
 		if attempt > 0 {
 			_ = s.SetState(job.ID, StateRetrying)
 			_ = s.SetProgress(job.ID, fmt.Sprintf(
-				"Reintentando descarga en %s (intento %d/%d)...", backoff, attempt, retryMax))
+				"Retrying download in %s (attempt %d/%d)...", backoff, attempt, retryMax))
 			time.Sleep(backoff)
 			backoff *= 2
 		}
@@ -285,7 +292,7 @@ func downloadWithRetry(s *Store, job *Job, rawURL, dest string, size int64) erro
 
 func downloadRange(rawURL, dest string, size int64, progress func(string)) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("crear cache: %w", err)
+		return fmt.Errorf("create cache: %w", err)
 	}
 
 	partial := int64(0)
@@ -350,9 +357,9 @@ func downloadRange(rawURL, dest string, size int64, progress func(string)) error
 				if mb != lastMB {
 					lastMB = mb
 					if size > 0 {
-						progress(fmt.Sprintf("Descargando bundle: %d / %d MB", mb, size/(1024*1024)))
+						progress(fmt.Sprintf("Downloading bundle: %d / %d MB", mb, size/(1024*1024)))
 					} else {
-						progress(fmt.Sprintf("Descargando bundle: %d MB", mb))
+						progress(fmt.Sprintf("Downloading bundle: %d MB", mb))
 					}
 				}
 			}
@@ -370,14 +377,14 @@ func downloadRange(rawURL, dest string, size int64, progress func(string)) error
 func materializeClone(bundlePath, target, originURL, defaultBranch string) error {
 	if _, err := os.Stat(filepath.Join(target, ".git")); os.IsNotExist(err) {
 		if err := runGit("", "clone", bundlePath, target); err != nil {
-			return fmt.Errorf("materializar repo desde bundle: %w", err)
+			return fmt.Errorf("materialize repo from bundle: %w", err)
 		}
 	}
 	if defaultBranch != "" {
 		cur, _ := gitOutput(target, "branch", "--show-current")
 		if strings.TrimSpace(cur) != defaultBranch {
 			if err := runGit(target, "checkout", defaultBranch); err != nil {
-				return fmt.Errorf("cambiar a la rama por defecto %s: %w", defaultBranch, err)
+				return fmt.Errorf("switch to default branch %s: %w", defaultBranch, err)
 			}
 		}
 	}

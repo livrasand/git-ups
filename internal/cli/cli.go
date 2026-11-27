@@ -14,7 +14,7 @@ import (
 	"github.com/livrasand/git-ups/internal/jobs"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 func Run(args []string) int {
 	if len(args) == 0 {

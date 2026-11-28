@@ -1,5 +1,9 @@
 # Git UPS
 
+<p align="center">
+    <img src="git-ups-workflow.gif" width="800" alt="Git UPS UI Demo">
+</p>
+
 **Reliable Git transfers that survive network interruptions.**
 
 Git UPS is an open-source, cross-platform Git client that makes `clone`, `fetch`, `pull` and `push` more resilient with background jobs, automatic retries and resumable transfers.
@@ -19,6 +23,9 @@ Git UPS is an open-source, cross-platform Git client that makes `clone`, `fetch`
 - **Open source** — MIT licensed, with no accounts or telemetry.
 
 ## Installation
+
+
+<img alt="Shell running the brew installation" width="500" src="git-ups-install.gif">
 
 ### macOS / Linux
 
